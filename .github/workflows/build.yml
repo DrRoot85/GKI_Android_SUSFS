@@ -50,6 +50,11 @@ on:
         required: false
         type: string
         default: ""
+      manager_ver:
+        description: "管理器 versionCode（如 32730），作为内核命名版本；优先级高于按提交数推导的 KSU_VERSION"
+        required: false
+        type: string
+        default: ""
 
       # ==================== 可选配置 ====================
       version:
@@ -510,6 +515,9 @@ jobs:
                 BRANCH="-s builtin"
               fi
               ;;
+            "KernelSU")
+              BRANCH="-s main"
+              ;;
             *)
               echo "未知变体: $variant_input" >&2
               exit 1
@@ -678,6 +686,27 @@ jobs:
               # 必须在上方证书注入（awk 重写 Kbuild）之后调用
               bash "$GITHUB_WORKSPACE/scripts/ksu_post_setup.sh" KernelSU finasu
               ;;
+            "KernelSU")
+              echo "添加 ${{ inputs.ksu_variant }}..."
+              curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash $BRANCH
+              # 内核侧检出到 get-manager 选定的提交（留空则跟随 main HEAD）
+              if [ -n "$KSU_COMMIT" ]; then
+                if ! git -C KernelSU checkout --detach "$KSU_COMMIT" 2>/dev/null; then
+                  git -C KernelSU fetch origin "$KSU_COMMIT"
+                  git -C KernelSU checkout --detach "$KSU_COMMIT"
+                fi
+                if [ "$(git -C KernelSU rev-parse HEAD)" != "$KSU_COMMIT" ]; then
+                  echo "::error::KernelSU 检出官方构建提交 $KSU_COMMIT 失败，无法对齐管理器版本"
+                  exit 1
+                fi
+                echo "KernelSU 已检出到官方上传构建提交 $KSU_COMMIT (KSU 版本 $((30000 + $(git -C KernelSU rev-list --count HEAD))))"
+              fi
+              # Original KernelSU：drivers/kernelsu 已由 setup.sh 集成进内核树，
+              # 不需要额外的软链/Makefile/Kconfig 修改；也不需要证书注入
+              #（官方管理器使用默认第一信任槽，与主线 KernelSU 一致）。
+              # 不调用 ksu_post_setup.sh：原版 Kbuild 版本字符串保持 @main/@HEAD。
+              ;;
+
             *)
               echo "未知变体: ${{ inputs.ksu_variant }}" >&2
               exit 1
@@ -695,13 +724,18 @@ jobs:
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           KSU_VERSION=""
-          if [ -n "${{ inputs.ksu_commit }}" ] && [ -d KernelSU/.git ]; then
+          # 优先使用管理器 versionCode（与管理器内核版本完全一致，如 32730）
+          MANAGER_VER="${{ inputs.manager_ver }}"
+          if [ "${{ inputs.ksu_variant }}" = "KernelSU" ] && [ -n "$MANAGER_VER" ]; then
+            KSU_VERSION="$MANAGER_VER"
+          elif [ -n "${{ inputs.ksu_commit }}" ] && [ -d KernelSU/.git ]; then
             KSU_COUNT=$(git -C KernelSU rev-list --count "${{ inputs.ksu_commit }}" 2>/dev/null || echo "")
             if [ -n "$KSU_COUNT" ]; then
               case "${{ inputs.ksu_variant }}" in
                 SukiSU-Nova) KSU_VERSION=$((30000 + KSU_COUNT - 4001)) ;;
                 BakaSU) KSU_VERSION=$((30700 + KSU_COUNT)) ;;
                 FinaSU) KSU_VERSION=$((30000 + KSU_COUNT)) ;;
+                KernelSU) KSU_VERSION=$((30000 + KSU_COUNT)) ;;
               esac
             fi
           fi
@@ -743,6 +777,40 @@ jobs:
         if: inputs.ksu_variant == 'SukiSU-Nova' && inputs.ksu_mode != '禁用KSU'
         working-directory: ${{ env.KERNEL_ROOT }}
         run: bash "$GITHUB_WORKSPACE/scripts/sukisu_compat/apply.sh" KernelSU
+
+      # 原生 KernelSU（tiann/KernelSU）不自带 SUSFS 支持，需打入
+      # 10_enable_susfs_for_ksu.patch 以添加 CONFIG_KSU_SUSFS、susfs_init()
+      # 调用点以及 SUSFS 相关的 Kbuild/Kconfig 条目。否则 SUSFS 主补丁在
+      # fs/ 下引用的 KSU 钩子点无法链接，编译会报未定义符号。
+      - name: 为原生 KernelSU 启用 SUSFS
+        if: inputs.ksu_variant == 'KernelSU' && inputs.enable_susfs
+        working-directory: ${{ env.KERNEL_ROOT }}
+        env:
+          SUSFS4KSU: ${{ env.SUSFS4KSU }}
+        run: |
+          set -e
+          # 原生 KernelSU（tiann/KernelSU）不自带 SUSFS 支持。
+          # 优先应用 upstream 的 10_enable_susfs_for_ksu.patch；
+          # 然后运行 apply_kernelsu_susfs.py 确保 init.c 中有 susfs_init()。
+          # apply_kernelsu_susfs.py 是集成权威：无论补丁是否应用，它都会
+          # 确保 Kconfig/init.c/Kbuild 都正确适配 SUSFS。
+          PATCH="${SUSFS4KSU}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
+          if [ -f "$PATCH" ]; then
+            echo "正在应用 10_enable_susfs_for_ksu.patch（upstream）..."
+            patch -p1 --no-backup-if-mismatch -d KernelSU < "$PATCH" || {
+              echo "::warning::补丁部分 hunks 跳过，apply_kernelsu_susfs.py 将尝试补全"
+            }
+          else
+            echo "未找到 $PATCH（susfs4ksu 仓库结构可能已变化），仅运行 apply_kernelsu_susfs.py"
+          fi
+
+          echo "正在运行 apply_kernelsu_susfs.py：确保 KernelSU SUSFS 集成..."
+          python3 "${{ env.KERNEL_ROOT }}/../scripts/susfs_fixes/apply_kernelsu_susfs.py" || {
+            echo "::error::apply_kernelsu_susfs.py 无法集成 SUSFS，构建中断" >&2
+            exit 1
+          }
+
+          echo "原生 KernelSU SUSFS 支持已添加"
 
       - name: 应用 SUSFS 补丁
         if: inputs.enable_susfs && env.SUSFS_SKIPPED != 'true'
@@ -1725,19 +1793,23 @@ jobs:
 
       - name: 添加 SUSFS 配置
         if: inputs.enable_susfs && env.SUSFS_SKIPPED != 'true'
+        working-directory: ${{ env.KERNEL_ROOT }}
         run: |
-          cat >> "$DEFCONFIG" << 'EOF'
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
-          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-          CONFIG_KSU_SUSFS_SUS_MAP=y
-          EOF
+          # 按 feat/usb-arsenal 方式：先写入 wild_defconfig.fragment（供兼容参考构建消费）；
+          # 同时写入 $DEFCONFIG，使本备份的 diff→ksu.fragment 流程能将其传给 bazel。
+          python3 "${{ env.KERNEL_ROOT }}/../scripts/append_fragment.py" \
+            "${{ env.KERNEL_ROOT }}/../.github/fragments/enable-susfs-kernel-configs.fragment" \
+            --dest common/wild_defconfig.fragment --label enable-susfs-kernel-configs
+
+          # 追加到 gki_defconfig，供后续 diff 生成 ksu.fragment 并传入 bazel --defconfig_fragment
+          while IFS= read -r line; do
+            case "$line" in
+              ''|\#*) continue ;;
+            esac
+            if ! grep -qF "$line" "$DEFCONFIG"; then
+              echo "$line" >> "$DEFCONFIG"
+            fi
+          done < "${{ env.KERNEL_ROOT }}/../.github/fragments/enable-susfs-kernel-configs.fragment"
 
       - name: 配置内核名称
         working-directory: ${{ env.KERNEL_ROOT }}

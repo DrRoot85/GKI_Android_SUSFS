@@ -15,6 +15,7 @@ on:
           - SukiSU-Nova
           - BakaSU
           - FinaSU
+          - KernelSU
         default: FinaSU
       build_channel:
         description: "构建管理器通道"
@@ -199,6 +200,12 @@ on:
         type: string
         default: ""
 
+      manager_ver:
+        description: "管理器 versionCode（从 main.yml 传入；直接触发时自动取本工作流拉取的管理器版本）"
+        required: false
+        type: string
+        default: ""
+
 jobs:
   build-kernels-a15-6-6:
     name: "6.6.${{ matrix.display_sub || matrix.sub_level }}-${{ matrix.os_patch_level }}"
@@ -257,6 +264,7 @@ jobs:
       ksu_commit: ${{ inputs.ksu_commit || needs.get-ksu-manager.outputs.ksuCommit }}
       ksu_cert_size: ${{ inputs.ksu_cert_size || needs.get-ksu-manager.outputs.managerCertSize }}
       ksu_cert_hash: ${{ inputs.ksu_cert_hash || needs.get-ksu-manager.outputs.managerCertHash }}
+      manager_ver: ${{ inputs.manager_ver || needs.get-ksu-manager.outputs.managerVer }}
       version: ${{ inputs.version || '' }}
       build_time: ${{ inputs.build_time || '' }}
       use_zram: ${{ inputs.use_zram }}
