@@ -1,4 +1,4 @@
-name: 内核构建 - Android 15 (6.6)
+name: Kernel Build - Android 15 (6.6)
 
 permissions:
   contents: write
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       kernelsu_variant:
-        description: "KernelSU 变体"
+        description: "KernelSU Variant"
         required: true
         type: choice
         options:
@@ -17,29 +17,29 @@ on:
           - FinaSU
         default: FinaSU
       build_channel:
-        description: "构建管理器通道"
+        description: "Manager Build Channel"
         required: false
         type: choice
         options:
-          - "正式 (Release)"
-          - "最新 (HEAD)"
-        default: "正式 (Release)"
+          - "Official (Release)"
+          - "Latest (HEAD)"
+        default: "Official (Release)"
       version:
-        description: "自定义内核版本名"
+        description: "Custom Kernel Version Name"
         required: false
         type: string
       build_time:
-        description: "自定义构建时间 (留空=自动获取当前北京时间) (示例 Tue Dec  1 08:10:00 UTC 2026)"
+        description: "Custom Build Time (leave empty = automatically get current Beijing time) (Example: Tue Dec  1 08:10:00 UTC 2026)"
         required: false
         type: string
         default: ""
       use_kpm:
-        description: "KPM 功能（仅SukiSU-Nova支持，开启未修补）"
+        description: "KPM Feature (Supported by SukiSU-Nova only, enabled without patching)"
         required: true
         type: boolean
         default: false
       droidspaces:
-        description: "Droidspaces 容器支持"
+        description: "Droidspaces Container Support"
         required: false
         type: choice
         options:
@@ -49,64 +49,64 @@ on:
           - "345"
         default: "off"
       artifact_upload_mode:
-        description: "构建产物上传模式"
+        description: "Build Artifact Upload Mode"
         required: true
         type: choice
         options:
-          - "仅上传 AnyKernel3.zip"
-          - "上传全部"
-        default: "仅上传 AnyKernel3.zip"
+          - "Upload AnyKernel3.zip Only"
+          - "Upload All"
+        default: "Upload AnyKernel3.zip Only"
       ksu_mode:
-        description: "KernelSU / SUSFS 模式"
+        description: "KernelSU / SUSFS Mode"
         required: true
         type: choice
         options:
-          - "关闭"
-          - "禁用SUSFS"
-          - "禁用KSU"
-        default: "关闭"
+          - "Disabled"
+          - "Disable SUSFS"
+          - "Disable KernelSU"
+        default: "Disabled"
       droidspaces_ntsync:
-        description: "启用 Droidspaces 容器 NTSync 支持（需启用 Droidspaces）"
+        description: "Enable Droidspaces Container NTSync Support (Requires Droidspaces to be enabled)"
         required: false
         type: boolean
         default: false
       use_zram:
-        description: "启用 ZRAM 压缩算法"
+        description: "Enable ZRAM Compression Algorithm"
         required: true
         type: boolean
         default: false
       use_bbg:
-        description: "启用 BBG 基带保护"
+        description: "Enable BBG Baseband Protection"
         required: true
         type: boolean
         default: false
       use_net_enhance:
-        description: "启用 网络增强 (BBRv3 + IPSet + Qdisc + CIFS)"
+        description: "Enable Network Enhancements (BBRv3 + IPSet + Qdisc + CIFS)"
         required: true
         type: boolean
         default: false
       use_rekernel:
-        description: "启用 Re-Kernel 驱动"
+        description: "Enable Re-Kernel Driver"
         required: false
         type: boolean
         default: false
       use_nomount:
-        description: "启用 NoMount 挂载元模块（需自行刷入配套模块）"
+        description: "Enable NoMount Mounting Meta-Module (Requires manually flashing the corresponding module)"
         required: false
         type: boolean
         default: false
       cve_2026_43499_patch:
-        description: "应用 CVE-2026-43499 rtmutex 修复链"
+        description: "Apply CVE-2026-43499 rtmutex Fix Chain"
         required: false
         type: boolean
         default: false
       supp_op:
-        description: "启用 一加 骁龙8 Elite/Gen5 支持"
+        description: "Enable OnePlus Snapdragon 8 Elite/Gen5 Support"
         required: false
         type: boolean
         default: false
       skip_incompatible:
-        description: "功能不兼容或无法使用时自动跳过该功能（不中断构建）"
+        description: "Automatically skip features when incompatible or unavailable (without interrupting the build)"
         required: false
         type: boolean
         default: true
@@ -116,10 +116,10 @@ on:
         required: true
         type: string
       build_channel:
-        description: "构建通道（从 main.yml 传入；直接触发时取本工作流拉取的管理器来源）"
+        description: "Build Channel (Passed from main.yml; when triggered directly, uses the manager source fetched by this workflow)"
         required: false
         type: string
-        default: "正式 (Release)"
+        default: "Official (Release)"
       version:
         required: false
         type: string
@@ -156,7 +156,7 @@ on:
       ksu_mode:
         required: false
         type: string
-        default: "关闭"
+        default: "Disabled"
       supp_op:
         required: false
         type: boolean
@@ -167,7 +167,7 @@ on:
       artifact_upload_mode:
         required: false
         type: string
-        default: "上传全部"
+        default: "Upload All"
       droidspaces_ntsync:
         required: false
         type: boolean
@@ -177,24 +177,24 @@ on:
         type: boolean
         default: true
       called_from_main:
-        description: "是否从 main.yml 调用（内部使用）"
+        description: "Whether called from main.yml (internal use)"
         required: false
         type: boolean
         default: false
       ksu_commit:
-        description: "官方最新上传构建的 KernelSU 提交（从 main.yml 传入；直接触发时自动取本工作流拉取的管理器构建）"
+        description: "Latest official KernelSU commit used for the manager build (Passed from main.yml; when triggered directly, automatically uses the manager build fetched by this workflow)"
         required: false
         type: string
         default: ""
 
       ksu_cert_size:
-        description: "FinaSU 管理器签名证书 DER 尺寸（从 main.yml 传入；直接触发时自动取本工作流拉取的管理器证书）"
+        description: "FinaSU Manager Signing Certificate DER Size (Passed from main.yml; when triggered directly, automatically uses the manager certificate fetched by this workflow)"
         required: false
         type: string
         default: ""
 
       ksu_cert_hash:
-        description: "FinaSU 管理器签名证书 SHA256（从 main.yml 传入；直接触发时自动取本工作流拉取的管理器证书）"
+        description: "FinaSU Manager Signing Certificate SHA256 (Passed from main.yml; when triggered directly, automatically uses the manager certificate fetched by this workflow)"
         required: false
         type: string
         default: ""
@@ -203,7 +203,7 @@ jobs:
   build-kernels-a15-6-6:
     name: "6.6.${{ matrix.display_sub || matrix.sub_level }}-${{ matrix.os_patch_level }}"
     needs: get-ksu-manager
-    # 管理器作业被跳过（called_from_main）或失败时不阻塞构建；ksuCommit 为空时回退传入值或 main HEAD
+    # Do not block the build if the manager job is skipped (called_from_main) or fails; if ksuCommit is empty, fall back to the input value or main HEAD
     if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
@@ -267,14 +267,14 @@ jobs:
       use_nomount: ${{ inputs.use_nomount || false }}
       cve_2026_43499_patch: ${{ inputs.cve_2026_43499_patch }}
       supp_op: ${{ inputs.supp_op || false }}
-      enable_susfs: ${{ inputs.ksu_mode != '禁用SUSFS' && inputs.ksu_mode != '禁用KSU' }}
+      enable_susfs: ${{ inputs.ksu_mode != 'Disable SUSFS' && inputs.ksu_mode != 'Disable KernelSU' }}
       ksu_mode: ${{ inputs.ksu_mode }}
       droidspaces: ${{ inputs.droidspaces || 'off' }}
       droidspaces_ntsync: ${{ inputs.droidspaces_ntsync || false }}
       artifact_upload_mode: ${{ inputs.artifact_upload_mode }}
       skip_incompatible: ${{ inputs.skip_incompatible || false }}
 
-  # 仅在直接触发时运行，从 main.yml 调用时跳过
+  # Run only when triggered directly; skip when called from main.yml
   get-ksu-manager:
     if: ${{ !inputs.called_from_main }}
     uses: ./.github/workflows/get-manager.yml
