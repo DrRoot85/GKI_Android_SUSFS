@@ -1,4 +1,4 @@
-name: Build Kernel
+name: Build Kernel En
 
 # Concurrency control: Only one run per branch at a time; new runs cancel previous ones.
 concurrency:
