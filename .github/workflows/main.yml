@@ -128,38 +128,38 @@ on:
         default: true
 
       # ==================== 构建版本选择 ====================
-      build_a12_5_10:
-        description: "Android 12 - 5.10"
-        type: boolean
-        default: false
-      build_a13_5_10:
-        description: "Android 13 - 5.10"
-        type: boolean
-        default: false
-      build_a13_5_15:
-        description: "Android 13 - 5.15"
-        type: boolean
-        default: false
-      build_a14_5_15:
-        description: "Android 14 - 5.15"
-        type: boolean
-        default: false
-      build_a14_6_1:
-        description: "Android 14 - 6.1"
-        type: boolean
-        default: false
+      # build_a12_5_10:
+      #   description: "Android 12 - 5.10"
+      #   type: boolean
+      #   default: false
+      # build_a13_5_10:
+      #   description: "Android 13 - 5.10"
+      #   type: boolean
+      #   default: false
+      # build_a13_5_15:
+      #   description: "Android 13 - 5.15"
+      #   type: boolean
+      #   default: false
+      # build_a14_5_15:
+      #   description: "Android 14 - 5.15"
+      #   type: boolean
+      #   default: false
+      # build_a14_6_1:
+      #   description: "Android 14 - 6.1"
+      #   type: boolean
+      #   default: false
       build_a15_6_6:
         description: "Android 15 - 6.6"
         type: boolean
         default: false
-      build_a16_6_12:
-        description: "Android 16 - 6.12"
-        type: boolean
-        default: false
-      build_a17_6_18:
-        description: "Android 17 - 6.18（SUSFS 未适配，固定禁用）"
-        type: boolean
-        default: false
+      # build_a16_6_12:
+      #   description: "Android 16 - 6.12"
+      #   type: boolean
+      #   default: false
+      # build_a17_6_18:
+      #   description: "Android 17 - 6.18（SUSFS 未适配，固定禁用）"
+      #   type: boolean
+      #   default: false
       build_all:
         description: "构建全部版本"
         type: boolean
@@ -425,14 +425,14 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     needs:
-      - build-a12-5-10
-      - build-a13-5-10
-      - build-a13-5-15
-      - build-a14-5-15
-      - build-a14-6-1
+      # - build-a12-5-10
+      # - build-a13-5-10
+      # - build-a13-5-15
+      # - build-a14-5-15
+      # - build-a14-6-1
       - build-a15-6-6
-      - build-a16-6-12
-      - build-a17-6-18
+      # - build-a16-6-12
+      # - build-a17-6-18
     steps:
       - name: 下载冲突文件
         uses: actions/download-artifact@v8
@@ -467,14 +467,14 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     needs:
-      - build-a12-5-10
-      - build-a13-5-10
-      - build-a13-5-15
-      - build-a14-5-15
-      - build-a14-6-1
+      # - build-a12-5-10
+      # - build-a13-5-10
+      # - build-a13-5-15
+      # - build-a14-5-15
+      # - build-a14-6-1
       - build-a15-6-6
-      - build-a16-6-12
-      - build-a17-6-18
+      # - build-a16-6-12
+      # - build-a17-6-18
     steps:
       - name: 下载编译失败日志
         uses: actions/download-artifact@v8
@@ -554,14 +554,14 @@ jobs:
       actions: write
     needs:
       - get-manager
-      - build-a12-5-10
-      - build-a13-5-10
-      - build-a13-5-15
-      - build-a14-5-15
-      - build-a14-6-1
+      # - build-a12-5-10
+      # - build-a13-5-10
+      # - build-a13-5-15
+      # - build-a14-5-15
+      # - build-a14-6-1
       - build-a15-6-6
-      - build-a16-6-12
-      - build-a17-6-18
+      # - build-a16-6-12
+      # - build-a17-6-18
 
     # ==================== 环境变量 ====================
     env:
