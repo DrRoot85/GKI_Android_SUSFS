@@ -32,6 +32,15 @@ cp "$SUSFS4KSU/kernel_patches/$SUSFS_PATCH" ./common/
 cp "$SUSFS4KSU"/kernel_patches/fs/* ./common/fs/
 cp "$SUSFS4KSU"/kernel_patches/include/linux/* ./common/include/linux/
 
+# feat/usb-arsenal: pre-i_user_ns() 内核（5.10/5.15/旧 6.1）将 i_uid_into_mnt(i_user_ns(...), ...)
+# 改写为 i_uid_into_mnt(&init_user_ns, ...)，否则 clang -Werror 报隐式声明。
+if [[ "$KERNEL_VERSION" == "5.10" || "$KERNEL_VERSION" == "5.15" ]]; then
+  if [ -f fs/susfs.c ]; then
+    echo "应用 susfs_idmap_compat.py（${KERNEL_VERSION} 无 i_user_ns()）"
+    python3 "$SCRIPT_DIR/susfs_idmap_compat.py" "$PWD/common/fs/susfs.c"
+  fi
+fi
+
 # FinaSU 上游自 cdf8711a + 5b83330b（2026-10-23）起树内原生集成 SUSFS，官方
 # docs/builtin-integration.md 明确要求**不要**应用 susfs4ksu 的
 # 10_enable_susfs_for_ksu.patch（该补丁面向上游 KernelSU 手动钩子模型，会把
@@ -92,6 +101,51 @@ verify_finasu_native_susfs() {
   echo "FinaSU 原生 SUSFS 集成校验通过"
 }
 
+# 原生 KernelSU SUSFS 集成校验：确认 10_enable_susfs_for_ksu.patch 已成功应用，
+# 即 KernelSU 已把 kprobe/lsM 钩子替换为 SUSFS，init.c 调用 susfs_init()，
+# 且 Kbuild 中不再包含旧 hook 编译单元（避免与 SUSFS 主补丁冲突）。
+# 如果未能自动集成（上游结构差异），中断构建，避免静默构建出无 SUSFS 的内核。
+verify_kernelsu_susfs() {
+  local KSU_KERNEL="$KERNEL_ROOT/KernelSU/kernel"
+
+  if [ ! -f "$KSU_KERNEL/core/init.c" ]; then
+    echo "::error::KernelSU 未包含 core/init.c，无法集成 SUSFS" >&2
+    exit 1
+  fi
+
+  # init.c 应调用 susfs_init() 而非 ksu_syscall_hook_init()
+  if ! grep -q 'susfs_init()' "$KSU_KERNEL/core/init.c"; then
+    echo "::error::KernelSU init.c 未调用 susfs_init()，SUSFS 集成不完整" >&2
+    exit 1
+  fi
+
+  if grep -qE 'ksu_syscall_hook(_manager)?_init();' "$KSU_KERNEL/core/init.c"; then
+    echo "::error::KernelSU init.c 仍调用 ksu_syscall_hook*_init()，SUSFS 集成不完整" >&2
+    exit 1
+  fi
+
+  # init.c 应包含 linux/susfs.h
+  if ! grep -q '#include <linux/susfs.h>' "$KSU_KERNEL/core/init.c"; then
+    echo "::error::KernelSU init.c 未包含 linux/susfs.h，SUSFS 集成不完整" >&2
+    exit 1
+  fi
+
+  # Kbuild 中不应再包含旧 hook 编译单元（已被 SUSFS 取代）
+  if grep -q 'kernelsu-objs += hook/lsm_hook.o' "$KSU_KERNEL/Kbuild" \
+    || grep -q 'kernelsu-objs += hook/tp_marker.o' "$KSU_KERNEL/Kbuild"; then
+    echo "::error::KernelSU Kbuild 仍包含旧 hook 编译单元，SUSFS 集成不完整" >&2
+    exit 1
+  fi
+
+  # Kconfig 应定义 KSU_SUSFS 选项
+  if ! grep -q 'config KSU_SUSFS' "$KSU_KERNEL/Kconfig"; then
+    echo "::error::KernelSU Kconfig 缺少 config KSU_SUSFS，SUSFS 集成不完整" >&2
+    exit 1
+  fi
+
+  echo "原生 KernelSU SUSFS 集成校验通过"
+}
+
 case "$KSU_VARIANT" in
   "SukiSU-Nova"|"BakaSU")
     echo "SukiSU-Nova/BakaSU 使用内置 SUSFS 支持"
@@ -99,6 +153,10 @@ case "$KSU_VARIANT" in
   "FinaSU")
     echo "FinaSU 使用树内原生 SUSFS 集成（驱动侧不打补丁，形态同 SukiSU-Nova/BakaSU）"
     verify_finasu_native_susfs
+    ;;
+  "KernelSU")
+    echo "原生 KernelSU 使用 SUSFS 兼容补丁（驱动侧需手动打补丁，与上游 tiann/KernelSU 对齐）"
+    verify_kernelsu_susfs
     ;;
 esac
 
@@ -288,7 +346,97 @@ fi
 echo "归一化 SUSFS 头文件上下文"
 python3 "$SCRIPT_DIR/normalize_trace_ctx.py" "$SUSFS_PATCH"
 
-patch -p1 < "$SUSFS_PATCH" || true
+# ==================== feat/usb-arsenal SUSFS 兼容性辅助脚本（原生 KernelSU 需要） ====================
+# 这些脚本来自 Bernstein94/AK3_GKI_KernelSU_SUSFS feat/usb-arsenal，用于
+# 让 SUSFS 主补丁在不同子版本上成功应用并编译。对 SukiSU/BakaSU/FinaSU 也是
+# 无害的（命中条件时执行，不命中时自动跳过）。
+
+# 1) android16-6.12 sublevel <= 92：适配 SUSFS 主补丁以匹配较旧的 fs/exec.c /
+#    fs/proc/task_mmu.c 形态，使 patch 能够正常应用。
+# 注意：此时已 cd 到 $KERNEL_ROOT/common，路径用 $PWD 而非 $PWD/common。
+if [[ "$ANDROID_VERSION" == "android16" && "$KERNEL_VERSION" == "6.12" ]]; then
+  CURRENT_SUB="${SUB_LEVEL:-99999}"
+  if [[ "$CURRENT_SUB" =~ ^[0-9]+$ ]] && [[ "$CURRENT_SUB" -le 92 ]]; then
+    echo "应用 apply_susfs_compat.py 适配 android16-6.12 sublevel ${CURRENT_SUB}"
+    python3 "$SCRIPT_DIR/apply_susfs_compat.py" "$PWD" "$SUSFS_PATCH"
+  fi
+fi
+
+# 2) android15-6.6 sublevel <= 30：将 show_smaps_rollup Case 4 改为大括号形式，
+#    以匹配 SUSFS 主补丁的 hunk 期望（patch 前 apply，patch 后 revert）。
+# 注意：此时已 cd 到 $KERNEL_ROOT/common，路径用 $PWD/... 而非 $PWD/common/...。
+if [[ "$ANDROID_VERSION" == "android15" && "$KERNEL_VERSION" == "6.6" ]]; then
+  CURRENT_SUB="${SUB_LEVEL:-99999}"
+  if [[ "$CURRENT_SUB" =~ ^[0-9]+$ ]] && [[ "$CURRENT_SUB" -le 30 ]]; then
+    echo "应用 susfs_fake_66_smaps.py apply（android15-6.6 sublevel ${CURRENT_SUB}）"
+    python3 "$SCRIPT_DIR/susfs_fake_66_smaps.py" "$PWD/fs/proc/task_mmu.c" apply
+  fi
+fi
+
+# 3) android16-6.12 sublevel >= 92：将 show_smaps_rollup 改为 pre-refactor 形态，
+#    以匹配 SUSFS 主补丁的 hunk 期望（patch 前 apply，patch 后 revert）。
+if [[ "$ANDROID_VERSION" == "android16" && "$KERNEL_VERSION" == "6.12" ]]; then
+  CURRENT_SUB="${SUB_LEVEL:-99999}"
+  if [[ "$CURRENT_SUB" =~ ^[0-9]+$ ]] && [[ "$CURRENT_SUB" -ge 92 ]]; then
+    echo "应用 susfs_fake_612.py apply（android16-6.12 sublevel ${CURRENT_SUB}）"
+    python3 "$SCRIPT_DIR/susfs_fake_612.py" "$PWD/fs/proc/task_mmu.c" apply
+  fi
+fi
+
+patch -p1 < "$SUSFS_PATCH" || {
+  echo "::error::SUSFS 主补丁应用失败（$SUSFS_PATCH），内核将缺少 SUSFS 支持" >&2
+  exit 1
+}
+
+# patch 后 revert 临时形态
+if [[ "$ANDROID_VERSION" == "android15" && "$KERNEL_VERSION" == "6.6" ]]; then
+  CURRENT_SUB="${SUB_LEVEL:-99999}"
+  if [[ "$CURRENT_SUB" =~ ^[0-9]+$ ]] && [[ "$CURRENT_SUB" -le 30 ]]; then
+    python3 "$SCRIPT_DIR/susfs_fake_66_smaps.py" "$PWD/fs/proc/task_mmu.c" revert || true
+  fi
+fi
+
+if [[ "$ANDROID_VERSION" == "android16" && "$KERNEL_VERSION" == "6.12" ]]; then
+  CURRENT_SUB="${SUB_LEVEL:-99999}"
+  if [[ "$CURRENT_SUB" =~ ^[0-9]+$ ]] && [[ "$CURRENT_SUB" -ge 92 ]]; then
+    python3 "$SCRIPT_DIR/susfs_fake_612.py" "$PWD/fs/proc/task_mmu.c" revert || true
+  fi
+fi
+
+# 4) 5.10/5.15/6.1：SUSFS 主补丁将 show_fdinfo() 扩展为 3 参，但 fanotify_fdinfo()
+#    仍为 2 参，在 CONFIG_FANOTIFY=y 时链接失败。补齐缺失的 struct file *file 参数。
+# 注意：此时已 cd 到 $KERNEL_ROOT/common，路径用 $PWD 而非 $PWD/common。
+if [[ "$ANDROID_VERSION" == "android12" || "$ANDROID_VERSION" == "android13" ]]; then
+  if [[ "$KERNEL_VERSION" == "5.10" || "$KERNEL_VERSION" == "5.15" ]]; then
+    if [ -f fs/notify/fdinfo.c ]; then
+      python3 "$SCRIPT_DIR/susfs_fdinfo_fanotify_arity.py" "$PWD"
+    fi
+  fi
+fi
+
+# 4b) 所有内核：susfs.c 中优先级 UID 过滤辅助函数被外部调用者 #ifdef 保护，
+#     但定义本身未保护，在无 CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER 时因未引用
+#     导致 clang -Werror,-Wunused-function。用相同 #ifdef 包裹定义。
+# 注意：此时已 cd 到 $KERNEL_ROOT/common，路径用 $PWD/... 而非 $PWD/common/...
+if [ -f fs/susfs.c ]; then
+  echo "应用 susfs_guard_priority_helpers.py（守护优先级 UID 过滤辅助函数）"
+  python3 "$SCRIPT_DIR/susfs_guard_priority_helpers.py" "$PWD/fs/susfs.c"
+fi
+
+# 4c) 所有内核：Google 从 GKI 源码中删除了 #include <trace/hooks/*> 而 SUSFS 主补丁
+#     的 hunk 上下文仍引用它们。恢复缺失的 trace/hooks 头文件上下文（源码不改动
+#     逻辑，仅补回 hunk 期望的 include 行）。
+python3 "$SCRIPT_DIR/susfs_restore_context.py" "$SUSFS_PATCH" "$PWD" || true
+
+# 5) android17-6.18：上游无 gki-android17-6.18 分支，由 feat/usb-arsenal 的
+#    susfs618 移植补丁维护。应用编译修复、函数原型和 task_mmu 适配。
+# 注意：此时已 cd 到 $KERNEL_ROOT/common，路径用 $PWD 而非 $PWD/common。
+if [[ "$ANDROID_VERSION" == "android17" && "$KERNEL_VERSION" == "6.18" ]]; then
+  echo "应用 android17-6.18 SUSFS 兼容脚本（susfs618 移植）"
+  python3 "$SCRIPT_DIR/susfs_618_compile_fixes.py" "$PWD"
+  python3 "$SCRIPT_DIR/susfs_618_prototypes.py" "$PWD"
+  python3 "$SCRIPT_DIR/susfs_618_task_mmu.py" "$PWD"
+fi
 
 # ==================== SUSFS：SELinux 钩子不再拦截 sandbox uid ====================
 # 背景：susfs4ksu 主补丁的 SELinux 钩子条件写成 current_uid().val >= 10000，
@@ -829,12 +977,16 @@ fi
 
 # Android 16 - 6.12 修复
 if [[ "$ANDROID_VERSION" == "android16" && "$KERNEL_VERSION" == "6.12" ]]; then
-  # 固定旧版 SukiSU-Nova 在 6.12 上会重复定义 setresuid hook
+  # 固定旧版 SukiSU-Nova 与原生 KernelSU 在 6.12 上会重复定义 setresuid hook
+  # SukiSU-Nova（LEGACY_SUKISU_CONFIG）与原生 KernelSU（CONFIG_KSU_MANUAL_HOOK）在 6.12 上
+  # 都会与 SUSFS 重复定义 setresuid hook，导致重复定义错误。
+  # 修复：当 SUSFS 启用时（CONFIG_KSU_SUSFS=y），跳过 KSU 侧的 setresuid hook 定义。
   SETUID_HOOK="$KERNEL_ROOT/common/drivers/kernelsu/setuid_hook.c"
-  if [[ -n "$LEGACY_SUKISU_CONFIG" && -f "$SETUID_HOOK" ]] \
+  if [[ -f "$SETUID_HOOK" ]] \
+    && { [[ -n "$LEGACY_SUKISU_CONFIG" ]] || [[ "$KSU_VARIANT" == "KernelSU" ]]; } \
     && grep -qF 'defined(CONFIG_KSU_MANUAL_HOOK))' "$SETUID_HOOK"; then
     sed -i 's/defined(CONFIG_KSU_MANUAL_HOOK))/!defined(CONFIG_KSU_SUSFS) \&\& defined(CONFIG_KSU_MANUAL_HOOK))/' "$SETUID_HOOK"
-    echo "已修复 setuid_hook.c 重复定义问题"
+    echo "已修复 setuid_hook.c 重复定义问题（KSU 变体: ${KSU_VARIANT:-未知}）"
   fi
 fi
 

@@ -150,6 +150,9 @@ jobs:
           elif [ "${{ inputs.kernelsu_variant }}" == "FinaSU" ]; then
             echo "This is the FinaSU variant"
             git clone https://github.com/LyraVoid/FinaSU.git KernelSU
+          elif [ "${{ inputs.kernelsu_variant }}" == "KernelSU" ]; then
+            echo "This is the KernelSU variant"
+            git clone https://github.com/tiann/KernelSU.git KernelSU
           else
             echo "Unknown variant"
             exit 1
@@ -164,6 +167,8 @@ jobs:
             KSU_VERSION=$((30000 + KSU_GIT_VERSION + 996))
           elif [ "${{ inputs.kernelsu_variant }}" == "FinaSU" ]; then
             # FinaSU 内核 Kbuild 与管理器 build.gradle.kts 均以 30000 + git 提交数计算版本
+            KSU_VERSION=$((30000 + KSU_GIT_VERSION))
+          elif [ "${{ inputs.kernelsu_variant }}" == "KernelSU" ]; then
             KSU_VERSION=$((30000 + KSU_GIT_VERSION))
           else
             KSU_VERSION=$((30700 + KSU_GIT_VERSION))
@@ -201,6 +206,7 @@ jobs:
           case "${{ inputs.kernelsu_variant }}" in
             "BakaSU") REPO="Baka-SU/BakaSU";           PREF="arm64" ;;
             "FinaSU") REPO="LyraVoid/FinaSU";          PREF="universal" ;;
+            "KernelSU") REPO="tiann/KernelSU";          PREF="universal" ;;
             *) echo "::error::未知变体"; exit 1 ;;
           esac
 
@@ -360,6 +366,7 @@ jobs:
           case "$VARIANT" in
             "BakaSU") REPO="Baka-SU/BakaSU";           KSUM="manager"; EXPECTED_BRANCH="main" ;;
             "FinaSU") REPO="LyraVoid/FinaSU";          KSUM="manager"; EXPECTED_BRANCH="master" ;;
+            "KernelSU") REPO="tiann/KernelSU";          KSUM="manager"; EXPECTED_BRANCH="main" ;;
             *) echo "::error::未知变体: $VARIANT"; exit 1 ;;
           esac
 
@@ -397,6 +404,7 @@ jobs:
                   case "$VARIANT" in
                     BakaSU) REL_KSU_VERSION=$((30700 + REL_COUNT)) ;;
                     FinaSU) REL_KSU_VERSION=$((30000 + REL_COUNT)) ;;
+                    KernelSU) REL_KSU_VERSION=$((30000 + REL_COUNT)) ;;
                   esac
                   if [ "$MANAGER_VERSION" != "$REL_KSU_VERSION" ]; then
                     echo "::warning::Release 管理器版本 $MANAGER_VERSION 与标签提交对应的 KSU 版本 $REL_KSU_VERSION 不一致"
@@ -494,7 +502,7 @@ jobs:
             exit 0
           fi
 
-          # ---------- 最新通道：官方 CI 构建的管理器（SukiSU-Nova / BakaSU / FinaSU） ----------
+          # ---------- 最新通道：官方 CI 构建的管理器（SukiSU-Nova / BakaSU / FinaSU / KernelSU） ----------
           get_manager_artifacts() {
             local artifacts="$1"
             if [ "$VARIANT" == "FinaSU" ]; then
@@ -516,6 +524,7 @@ jobs:
             case "$1" in
               BakaSU) echo $((30700 + $2)) ;;
               FinaSU) echo $((30000 + $2)) ;;
+              KernelSU) echo $((30000 + $2)) ;;
             esac
           }
 
@@ -725,6 +734,7 @@ jobs:
             case "$VARIANT" in
               BakaSU) PINNED_KSU_VERSION=$((30700 + PIN_COUNT)) ;;
               FinaSU) PINNED_KSU_VERSION=$((30000 + PIN_COUNT)) ;;
+              KernelSU) PINNED_KSU_VERSION=$((30000 + PIN_COUNT)) ;;
               *)      PINNED_KSU_VERSION="" ;;
             esac
             if [ -n "$PINNED_KSU_VERSION" ]; then

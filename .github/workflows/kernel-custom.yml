@@ -298,6 +298,7 @@ on:
           - SukiSU-Nova
           - BakaSU
           - FinaSU
+          - KernelSU
         default: FinaSU
 
       build_channel:
@@ -567,6 +568,7 @@ jobs:
       ksu_commit: ${{ needs.get-ksu-manager.outputs.ksuCommit }}
       ksu_cert_size: ${{ needs.get-ksu-manager.outputs.managerCertSize }}
       ksu_cert_hash: ${{ needs.get-ksu-manager.outputs.managerCertHash }}
+      manager_ver: ${{ needs.get-ksu-manager.outputs.managerVer }}
       version: ${{ inputs.version || '' }}
       build_time: ${{ inputs.build_time || '' }}
       use_zram: ${{ inputs.use_zram }}

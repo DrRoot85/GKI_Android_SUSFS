@@ -1,0 +1,84 @@
+diff --git a/kernel/Kconfig b/kernel/Kconfig
+index 0000000..1111111 100644
+--- a/kernel/Kconfig
++++ b/kernel/Kconfig
+@@ -37,4 +37,34 @@ config KSU_X86_PATCH_SYSCALL_DISPATCHER
+   default n
+   help
+     Dynamically patch x64's hardened syscall dispatcher to support syscall hooks. This is a
+     replacement for a kernel source code patch, and is useful for x86_64 LKM mode.
++
++menu "KernelSU - SUSFS"
++config KSU_SUSFS
++	bool "KernelSU addon - SUSFS"
++	depends on KSU
++	default y
++	help
++	  Patch and Enable SUSFS to kernel with KernelSU
++
++config KSU_SUSFS_SUS_PATH
++	bool "Enable to hide suspicious path"
++	depends on KSU_SUSFS
++	default y
++	help
++	  Allow hiding the existence of user-defined file/directory from various system calls
++
++config KSU_SUSFS_SUS_MOUNT
++	bool "Enable to hide suspicious mounts"
++	depends on KSU_SUSFS
++	default y
++	help
++	  Allow hiding the user-defined mount paths from /proc/self/[mounts|mountinfo|mountstat]
++
++config KSU_SUSFS_SUS_KSTAT
++	bool "Enable to spoof suspicious kstat"
++	depends on KSU_SUSFS
++	default y
++	help
++	  Allow spoofing the kstat of user-defined file/directory
++
++config KSU_SUSFS_SPOOF_UNAME
++	bool "Enable to spoof uname"
++	depends on KSU_SUSFS
++	default y
++	help
++	  Allow spoofing the string returned by uname syscall to user-defined string
++
++config KSU_SUSFS_ENABLE_LOG
++	bool "Enable logging susfs log to kernel"
++	depends on KSU_SUSFS
++	default y
++	help
++	  Allow logging susfs log to kernel, uncheck it to completely disable all susfs log
++endmenu
++
+ endmenu
+diff --git a/kernel/core/init.c b/kernel/core/init.c
+index 0000000..2222222 100644
+--- a/kernel/core/init.c
++++ b/kernel/core/init.c
+@@ -22,6 +22,7 @@
+ #include "infra/symbol_resolver.h"
+ #include "preinit/preinit.h"
++#include <linux/susfs.h>
+ 
+ #if defined(__x86_64__) && !defined(CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER)
+ #include <asm/cpufeature.h>
+@@ -87,6 +88,9 @@ int __init kernelsu_init(void)
+     }
+ 
++#ifdef CONFIG_KSU_SUSFS
++    susfs_init();
++#endif
++
+     ksu_cred = prepare_creds();
+     if (!ksu_cred) {
+         pr_err("prepare cred failed!\n");
+@@ -95,7 +99,6 @@ int __init kernelsu_init(void)
+ 
+     ksu_syscall_hook_init();
+ 
+-    // Block modules early, before vendor modules are loaded in second stage.
+     ksu_module_blacklist_init();
+ 
+     ksu_feature_init();
